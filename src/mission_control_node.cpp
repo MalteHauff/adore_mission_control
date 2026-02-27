@@ -35,7 +35,26 @@ MissionControlNode::create_publishers()
   local_map_publisher     = create_publisher<MapAdapter>( "local_map", 10 );
   goal_reached_publisher  = create_publisher<std_msgs::msg::Bool>( "goal_reached", 10 );
   publisher_caution_zones = create_publisher<adore_ros2_msgs::msg::CautionZone>( "caution_zones", 10 );
+  drive_back_subscriber = create_subscription<std_msgs::msg::Bool>(
+  "mission/drive_back_to_start", 10,
+  std::bind(&MissionControlNode::drive_back_to_start_callback, this, std::placeholders::_1));
+
 }
+
+void MissionControlNode::drive_back_to_start_callback(const std_msgs::msg::Bool& msg)
+{
+  if (msg.data && start_goal.has_value())
+  {
+    Goal drive_back_goal;
+    drive_back_goal.x = start_goal->x;
+    drive_back_goal.y = start_goal->y;
+    drive_back_goal.label = "drive back to start";
+    goals.push_front(drive_back_goal);
+    current_route = std::nullopt; // Force route recalculation to the new goal
+    RCLCPP_INFO(get_logger(), "Received drive back command. Added goal to drive back to start point at (%.2f, %.2f)", drive_back_goal.x, drive_back_goal.y);
+  }
+}
+
 
 void
 MissionControlNode::update_route()
@@ -161,12 +180,22 @@ MissionControlNode::clicked_point_callback( const geometry_msgs::msg::PointStamp
   keep_moving_goal.x     = msg.point.x;
   keep_moving_goal.y     = msg.point.y;
   goals.push_front( keep_moving_goal );
+  
 }
 
 void
 MissionControlNode::vehicle_state_callback( const dynamics::VehicleStateDynamic& msg )
 {
   latest_vehicle_state = msg;
+  if(!start_goal.has_value())
+  {
+    Goal initial_goal;
+    initial_goal.x     = msg.x;
+    initial_goal.y     = msg.y;
+    initial_goal.label = "initial position";
+    start_goal = initial_goal;
+    RCLCPP_INFO(get_logger(), "Stored start point at (%.2f, %.2f)", initial_goal.x, initial_goal.y);
+  }
 }
 
 void
