@@ -75,7 +75,10 @@ private:
   std::optional<map::Route> current_route = std::nullopt;
   std::optional<Goal>       start_goal   = std::nullopt;
 
+  std::size_t stable_parallel_lane_counter_ = 0;
+  rclcpp::Time last_forced_replan_time_;
 
+  
   rclcpp::Publisher<RouteAdapter>::SharedPtr                      route_publisher;
   rclcpp::Publisher<MapAdapter>::SharedPtr                        local_map_publisher;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr               goal_reached_publisher;

@@ -15,12 +15,45 @@
 
 #include <type_traits>
 using namespace std::chrono_literals;
+#include <algorithm>
+#include <cmath>
+#include <limits>
 
 namespace adore
 {
+namespace
+{
+std::optional<size_t> lane_id_at_route_s(const adore::map::Route& route, double s)
+{
+  if(route.reference_line.empty()) return std::nullopt;
+  auto it = route.reference_line.lower_bound(s);
+  if(it == route.reference_line.end()) it = std::prev(route.reference_line.end());
+  return it->second.parent_id;
+}
+
+std::optional<double> distance_to_lane_center(
+    const adore::map::Map& map,
+    size_t lane_id,
+    const adore::dynamics::VehicleStateDynamic& ego)
+{
+  auto it = map.lanes.find(lane_id);
+  if (it == map.lanes.end() || !it->second) return std::nullopt;
+
+  const auto& pts = it->second->borders.center.interpolated_points;
+  if (pts.empty()) return std::nullopt;
+
+  double best = std::numeric_limits<double>::max();
+  for (const auto& p : pts)
+  {
+    best = std::min(best, adore::math::distance_2d(p, ego));
+  }
+  return best;
+}
+}
 
 MissionControlNode::MissionControlNode( const rclcpp::NodeOptions& options ) :
-  Node( "mission_control", options )
+  Node( "mission_control", options ),
+  last_forced_replan_time_( this->now() )
 {
   load_parameters();
   road_map = std::make_shared<map::Map>( map::MapLoader::load_from_file( map_file_location ) );
@@ -55,20 +88,107 @@ void MissionControlNode::drive_back_to_start_callback(const std_msgs::msg::Bool&
   }
 }
 
-
 void
 MissionControlNode::update_route()
 {
+  bool force_replan = false;
+
   if( current_route.has_value() && latest_vehicle_state.has_value() )
   {
-    if( current_route->get_length() - current_route->get_s( latest_vehicle_state.value() ) < 0.5 )
+    const auto& ego = latest_vehicle_state.value();
+
+    // Goal reached check
+    if( current_route->get_length() - current_route->get_s( ego ) < 0.5 )
+    {
       reach_goal();
+    }
+    else if( road_map )
+    {
+      const double route_s = current_route->get_s( ego );
+      auto route_lane_id = lane_id_at_route_s(*current_route, route_s);
+
+      if (route_lane_id.has_value())
+      {
+        std::vector<size_t> corridor_lanes;
+        corridor_lanes.push_back(*route_lane_id);
+
+        auto parallels = road_map->get_parallel_lanes(*route_lane_id);
+        corridor_lanes.insert(corridor_lanes.end(), parallels.begin(), parallels.end());
+
+        std::optional<size_t> best_lane_id;
+        double best_dist = std::numeric_limits<double>::max();
+        double route_lane_dist = std::numeric_limits<double>::max();
+
+        for (size_t lane_id : corridor_lanes)
+        {
+          auto lit = road_map->lanes.find(lane_id);
+          if (lit == road_map->lanes.end() || !lit->second) continue;
+          if (lit->second->type != adore::map::LaneType::driving) continue;
+
+          auto dist_opt = distance_to_lane_center(*road_map, lane_id, ego);
+          if (!dist_opt.has_value()) continue;
+
+          const double d = *dist_opt;
+          if (lane_id == *route_lane_id) route_lane_dist = d;
+
+          if (d < best_dist)
+          {
+            best_dist = d;
+            best_lane_id = lane_id;
+          }
+        }
+
+        if (best_lane_id.has_value() &&
+            *best_lane_id != *route_lane_id &&
+            std::isfinite(route_lane_dist) &&
+            best_dist + 0.20 < route_lane_dist)
+        {
+          stable_parallel_lane_counter_++;
+        }
+        else
+        {
+          stable_parallel_lane_counter_ = 0;
+        }
+
+        const bool cooldown_ok =
+            (now() - last_forced_replan_time_).seconds() > 0.05;
+
+        if (stable_parallel_lane_counter_ >= 1 && cooldown_ok)
+        {
+          RCLCPP_INFO(
+              get_logger(),
+              "Vehicle is stably on parallel lane %zu instead of route lane %zu -> forcing route replanning",
+              *best_lane_id,
+              *route_lane_id);
+
+          last_forced_replan_time_ = now();
+          stable_parallel_lane_counter_ = 0;
+          force_replan = true;
+        }
+      }
+      else
+      {
+        stable_parallel_lane_counter_ = 0;
+      }
+    }
   }
+
+  if (force_replan)
+  {
+    current_route = std::nullopt;
+  }
+
   if( !current_route && latest_vehicle_state && !goals.empty() && road_map )
   {
     auto route = map::Route( latest_vehicle_state.value(), goals.front(), road_map );
     if( !route.reference_line.empty() )
+    {
       current_route = route;
+      RCLCPP_INFO(
+          get_logger(),
+          "Replanned route from current pose to goal '%s'",
+          goals.front().label.c_str());
+    }
   }
 }
 
