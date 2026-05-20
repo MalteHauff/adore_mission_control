@@ -141,7 +141,7 @@ MissionControlNode::update_route()
         if (best_lane_id.has_value() &&
             *best_lane_id != *route_lane_id &&
             std::isfinite(route_lane_dist) &&
-            best_dist + 0.20 < route_lane_dist)
+            best_dist + 0.80 < route_lane_dist)
         {
           stable_parallel_lane_counter_++;
         }
@@ -151,9 +151,9 @@ MissionControlNode::update_route()
         }
 
         const bool cooldown_ok =
-            (now() - last_forced_replan_time_).seconds() > 0.05;
+            (now() - last_forced_replan_time_).seconds() > 0.5;
 
-        if (stable_parallel_lane_counter_ >= 1 && cooldown_ok)
+        if (stable_parallel_lane_counter_ >= 4 && cooldown_ok)
         {
           RCLCPP_INFO(
               get_logger(),
