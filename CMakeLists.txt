@@ -23,7 +23,6 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(adore_ros2_msgs REQUIRED)
-find_package(caches REQUIRED PATHS ${CMAKE_INSTALL_PREFIX}/../caches/lib/cmake/caches)
 find_package(adore_map REQUIRED)
 find_package(adore_math REQUIRED)
 find_package(adore_dynamics REQUIRED)
@@ -39,7 +38,8 @@ find_package(std_msgs REQUIRED)
 
 # Executable
 add_executable(${PROJECT_NAME}
-  src/mission_control_node.cpp
+  src/main.cpp
+  src/mission_control.cpp
 )
 
 target_include_directories(${PROJECT_NAME}
@@ -69,7 +69,7 @@ install(TARGETS ${PROJECT_NAME}
 )
 
 # Component Library
-add_library(${PROJECT_NAME}_component SHARED src/mission_control_node.cpp)
+add_library(${PROJECT_NAME}_component SHARED src/mission_control.cpp)
 
 target_include_directories(${PROJECT_NAME}_component
   PRIVATE

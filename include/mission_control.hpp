@@ -14,7 +14,9 @@
 #pragma once
 #include <chrono>
 #include <deque>
+#include <mutex>
 #include <optional>
+#include <thread>
 
 #include "adore_dynamics_adapters.hpp"
 #include "adore_dynamics_conversions.hpp"
@@ -37,18 +39,18 @@ using namespace std::chrono_literals;
 
 namespace adore
 {
-class MissionControlNode : public rclcpp::Node
+class MissionControl : public rclcpp::Node
 {
 public:
 
-  MissionControlNode( const rclcpp::NodeOptions& options );
+  MissionControl( const rclcpp::NodeOptions& options );
 
 private:
 
   enum GoalType
   {
-    PICK_UP,
-    DROP_OFF
+    CONTINUE,
+    STOP
   };
 
   struct Goal
@@ -96,6 +98,7 @@ private:
 
   std::optional<dynamics::VehicleStateDynamic> latest_vehicle_state = std::nullopt;
   std::shared_ptr<map::Map>                    road_map             = nullptr;
+  std::mutex                                   map_mutex_;
   std::string                                  map_file_location;
 
 
