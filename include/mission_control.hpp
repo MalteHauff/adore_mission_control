@@ -70,6 +70,7 @@ private:
   void publish_local_map();
   void update_route();
   void publish_caution_zones();
+  void drive_back_to_start_callback( const std_msgs::msg::Bool& msg );
 
   void reach_goal();
 
@@ -85,6 +86,7 @@ private:
   rclcpp::Subscription<adore_ros2_msgs::msg::GoalPoint>::SharedPtr  keep_moving_subscriber;
   rclcpp::Subscription<StateAdapter>::SharedPtr                     vehicle_state_subscriber;
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr clicked_point_subscriber;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr drive_back_subscriber;
   rclcpp::TimerBase::SharedPtr                                      main_timer;
 
   std::deque<Goal> goals;
@@ -98,5 +100,6 @@ private:
 
 
   double local_map_size = 100;
+  std::optional<Goal> start_goal = std::nullopt;
 };
 } // namespace adore

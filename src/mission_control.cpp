@@ -134,8 +134,13 @@ MissionControl::create_subscribers()
   clicked_point_subscriber = create_subscription<geometry_msgs::msg::PointStamped>( "/clicked_point/goal_position", 10,
                                                                                     std::bind( &MissionControl::clicked_point_callback,
                                                                                                this, std::placeholders::_1 ) );
+  drive_back_subscriber = create_subscription<std_msgs::msg::Bool>( "mission/drive_back_to_start", 10,  
+                                                                  std::bind( &MissionControl::drive_back_to_start_callback, this, std::placeholders::_1 ) );
 
+
+                                                                            
   main_timer = create_wall_timer( 100ms, std::bind( &MissionControl::timer_callback, this ) );
+
 }
 
 void
@@ -258,6 +263,23 @@ void
 MissionControl::vehicle_state_callback( const dynamics::VehicleStateDynamic& msg )
 {
   latest_vehicle_state = msg;
+
+  if( !start_goal.has_value() )
+  {
+    Goal initial_goal;
+    initial_goal.x     = msg.x;
+    initial_goal.y     = msg.y;
+    initial_goal.label = "initial position";
+    initial_goal.type  = GoalType::STOP;
+
+    start_goal = initial_goal;
+
+    RCLCPP_INFO(
+      get_logger(),
+      "Stored start point at (%.2f, %.2f)",
+      initial_goal.x,
+      initial_goal.y );
+  }
 }
 
 void
@@ -271,6 +293,45 @@ MissionControl::publish_caution_zones()
     caution_zone_msg.header.frame_id = "world";
     publisher_caution_zones->publish( caution_zone_msg );
   }
+}
+
+
+void
+MissionControl::drive_back_to_start_callback( const std_msgs::msg::Bool& msg )
+{
+  if( !msg.data )
+  {
+    return;
+  }
+
+  if( !start_goal.has_value() )
+  {
+    RCLCPP_WARN( get_logger(), "Drive back to start requested, but no start position is stored yet." );
+    return;
+  }
+
+  Goal drive_back_goal;
+  drive_back_goal.x     = start_goal->x;
+  drive_back_goal.y     = start_goal->y;
+  drive_back_goal.label = "drive back to start";
+  drive_back_goal.type  = GoalType::STOP;
+
+  if( !goals.empty() )
+  {
+    goals.front() = drive_back_goal;
+  }
+  else
+  {
+    goals.push_front( drive_back_goal );
+  }
+
+  current_route = std::nullopt;
+
+  RCLCPP_INFO(
+    get_logger(),
+    "Received drive back command. Added goal to drive back to start point at (%.2f, %.2f)",
+    drive_back_goal.x,
+    drive_back_goal.y );
 }
 
 } // namespace adore
